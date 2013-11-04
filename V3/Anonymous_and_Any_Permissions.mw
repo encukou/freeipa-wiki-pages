@@ -1,0 +1,303 @@
+__NOTOC__
+
+= Overview =
+
+Allow IPA permissions to apply to Anonymous and All authenticated users.
+
+= Use Cases =
+
+Note:
+Until permissions can be used to grant read access (in
+[[V3/Managed Read permissions|Managed Read permissions]]), this feature is
+not very practical.
+
+* Allow all authenticated users to edit other users' login shell
+
+ ipa permission-add 'Shell editable by all' --type=user --attrs=loginshell --bindtype=all --permissions=write
+
+* Allow all users (even anonymous ones via LDAP) to edit other users' login shell
+
+ ipa permission-add 'Shell editable by anonymous' --type=user --attrs=loginshell --bindtype=anonymous --permissions=write
+
+= Design= 
+
+The <tt>permission_{add,mod,find}</tt> commands will get a new <tt>--bindtype</tt>
+option with these values:
+
+* (empty) - Permission behaves as before -- grants access through privileges+roles
+* "all" - Permission applies to all authenticated users (<tt>ldap:///all</tt>)
+* "anonymous" - Permission applies to all users, even unauthenticated ones (<tt>ldap:///anyone</tt>)
+
+Note:
+As IPA API always requires authentication,
+unauthenticated users would need to use LDAP directly.
+
+The <tt>permission_{add,mod,find,show}</tt> commands will return
+<tt>bindtype</tt> if it is set on the permission.
+
+Permissions with <tt>bindtype</tt> set may not be added to privileges,
+and <tt>bindtype</tt> may not be set on permissions that are already members of
+a privilege. (This will not be enforced on older servers; however adding
+such a permission to a privilege will not have any effect.)
+
+Internally, the <tt>aci_*</tt> commands will grow a <tt>bindtype</tt> option
+with the possible values above, plus "self".
+The "selfaci" option will become a deprecated alias for bindtype=self.
+
+= Implementation =
+
+No additional requirements or changes discovered during the implementation phase.
+
+= Feature Management =
+
+=== UI ===
+
+The UI will need a new field for the bind type.
+
+Adding permissions with <tt>bindtype</tt> set to privileges, and setting
+<tt>bindtype</tt> on permissions in privileges, should be disabled in the UI.
+
+=== CLI ===
+
+See Design.
+
+= Major configuration options and enablement =
+
+N/A
+
+= Replication =
+
+ACIs are replicated.
+
+= Updates and Upgrades =
+
+ACIs with <tt>bindtype</tt> set will not be recognized as such by older IPA
+servers.
+During an upgrade period, users are advised to use upgraded servers for
+working with the new style of ACIs.
+
+= Dependencies =
+
+None
+
+= External Impact =
+
+Will need tests and documentation
+
+= Backup and Restore =
+
+ACIs are part of the DIT and so they are backed up.
+
+= Test Plan =
+Implemented in <tt>ipatests.test_xmlrpc.test_permission_plugin.test_permission_bindtype</tt>
+
+Like other tests in the test_xmlrpc suite, these tests should run 
+on a clean IPA installation, possibly after other similar tests.
+
+{{Test Case|Create anonymous u'testperm'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_add testperm --type=user --bindtype=anonymous --permissions=write
+|results=
+The command succeeds with this output:
+ ---------------------------
+ Added permission "testperm"
+ ---------------------------
+   Permission name: testperm
+   Permissions: write
+   Type: user
+   Bind type: anonymous
+}}
+
+
+{{Test Case|Retrieve u'testperm' with --raw
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_show testperm --raw
+|results=
+The command succeeds with this output:
+   cn: testperm
+   aci: (target = "ldap:///uid=*,cn=users,cn=accounts,$SUFFIX")(version 3.0;acl "permission:testperm";allow (write) userdn = "ldap:///anyone";)
+}}
+
+
+{{Test Case|Create u'testpriv1'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa privilege_add testpriv1 --desc='privilege desc. 1'
+|results=
+The command succeeds with this output:
+ ---------------------------
+ Added privilege "testpriv1"
+ ---------------------------
+   Privilege name: testpriv1
+   Description: privilege desc. 1
+}}
+
+
+{{Test Case|Try to add u'testperm' to u'testpriv1'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa privilege_add_permission testpriv1 --permissions='[u'\''testperm'\'']'
+|results=
+The command fails with this error:
+ invalid 'permission': cannot add permission "testperm" with bindtype "anonymous" to a privilege
+}}
+
+
+{{Test Case|Change binddn of u'testperm' to all
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_mod testperm --type=user --bindtype=all
+|results=
+The command succeeds with this output:
+ ------------------------------
+ Modified permission "testperm"
+ ------------------------------
+   Permission name: testperm
+   Permissions: write
+   Type: user
+   Bind type: all
+}}
+
+
+{{Test Case|Retrieve u'testperm' with --raw
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_show testperm --raw
+|results=
+The command succeeds with this output:
+   cn: testperm
+   aci: (target = "ldap:///uid=*,cn=users,cn=accounts,$SUFFIX")(version 3.0;acl "permission:testperm";allow (write) userdn = "ldap:///all";)
+}}
+
+
+{{Test Case|Try to add u'testperm' to u'testpriv1'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa privilege_add_permission testpriv1 --permissions='[u'\''testperm'\'']'
+|results=
+The command fails with this error:
+ invalid 'permission': cannot add permission "testperm" with bindtype "all" to a privilege
+}}
+
+
+{{Test Case|Search for u'testperm' using --bindtype
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_find --bindtype=all
+|results=
+The command succeeds with this output:
+ --------------------
+ 1 permission matched
+ --------------------
+   Permission name: testperm
+   Permissions: write
+   Type: user
+   Bind type: all
+ ----------------------------
+ Number of entries returned 1
+ ----------------------------
+}}
+
+
+{{Test Case|Rename u'testperm' to permission u'testperm1_rn'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_mod testperm --rename=testperm1_rn
+|results=
+The command succeeds with this output:
+ ------------------------------
+ Modified permission "testperm"
+ ------------------------------
+   Permission name: testperm1_rn
+   Permissions: write
+   Type: user
+   Bind type: all
+}}
+
+
+{{Test Case|Retrieve u'testperm1_rn' with --raw
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_show testperm1_rn --raw
+|results=
+The command succeeds with this output:
+   cn: testperm1_rn
+   aci: (target = "ldap:///uid=*,cn=users,cn=accounts,$SUFFIX")(version 3.0;acl "permission:testperm1_rn";allow (write) userdn = "ldap:///all";)
+}}
+
+
+{{Test Case|Unset binddn of u'testperm1_rn'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_mod testperm1_rn --type=user --bindtype=None
+|results=
+The command succeeds with this output:
+ ----------------------------------
+ Modified permission "testperm1_rn"
+ ----------------------------------
+   Permission name: testperm1_rn
+   Permissions: write
+   Type: user
+}}
+
+
+{{Test Case|Retrieve u'testperm1_rn' with --raw
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_show testperm1_rn --raw
+|results=
+The command succeeds with this output:
+   cn: testperm1_rn
+   aci: (target = "ldap:///uid=*,cn=users,cn=accounts,$SUFFIX")(version 3.0;acl "permission:testperm1_rn";allow (write) groupdn = "ldap:///cn=testperm1_rn,cn=permissions,cn=pbac,$SUFFIX";)
+}}
+
+
+{{Test Case|Rename u'testperm1_rn' back to u'testperm'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_mod testperm1_rn --rename=testperm --permissions=all
+|results=
+The command succeeds with this output:
+ ----------------------------------
+ Modified permission "testperm1_rn"
+ ----------------------------------
+   Permission name: testperm
+   Permissions: all
+   Type: user
+}}
+
+
+{{Test Case|Add u'testperm' to u'testpriv1'
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa privilege_add_permission testpriv1 --permissions='[u'\''testperm'\'']'
+|results=
+The command succeeds with this output:
+   Privilege name: testpriv1
+   Description: privilege desc. 1
+   Permissions: testperm
+ -----------------------------
+ Number of permissions added 1
+ -----------------------------
+}}
+
+
+{{Test Case|Try to change binddn of u'testperm' to anonymous
+|setup=See beginning of the Tests section
+|actions=Run the following command:
+    ipa permission_mod testperm --type=user --bindtype=anonymous
+|results=
+The command fails with this error:
+ invalid 'bindtype': cannot set bindtype for a permission that is assigned to a privilege
+}}
+
+<h2>Cleanup</h2>
+ ipa permission_del testperm --force
+ ipa permission_del testperm1_rn --force
+ ipa privilege_del testpriv1
+
+= RFE Author =
+
+[[User:Pviktorin|Petr Viktorin]]
