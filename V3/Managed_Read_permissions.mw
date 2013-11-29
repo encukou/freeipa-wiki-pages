@@ -8,121 +8,16 @@ __NOTOC__
 IPA is extended to include a system of fine-grained read permissions
 that administrators can assign to specific users or groups.
 
-A new role, "Users", is added. By default it grants read permissions to all
-users.
-
-Preparations are made for a larger overhaul of how IPA handles access control
-internally.
-
-= Background and scope =
-
-== Glossary ==
-
-The basic structure of RBAC is unchanged from previous versions.
-For reference, here is a quick glossary.
-
-* ACI: The DS-level permission.
-* Permission: IPA object that encapsulates one ACI. Example: "add user". Permissions aren't as flexible as raw ACIs.
-* Privilege: IPA object that groups several permissions, e.g. with a "manage users" privilege you can "add user", "modify user", ...
-* Role: IPA object that groups privileges, e.g. an "User Administrator" can manage users and groups. Roles are assigned to users/groups/hosts.
-
-== Administrators in IPA ==
-
-In IPA, there are several classes of privileged users:
-
-=== The "admins" group ===
-
-This group is the hard-coded group of high-level administrators.
-Its members can change and read any user-modifiable or user-readable
-information in IPA.
-
-The system ensures that at least one user is a member of this group.
-
-Access control for <tt>admins</tt> is handled by directory-level ACIs that
-are not tied to IPA's permission system, and thus not modifiable.
-
-=== Default administrator groups ===
-
-IPA provides groups such as "User Administrators" and
-"Netgroups Administrators" that have write access to their respective areas.
-
-Access control here is handled by Permissions, which are grouped into
-Privileges, which are assigned to Roles, which are given to users and user
-groups.
-
-On upgrades, IPA updates these permissions.
-Unfortunately this is done in a way that does not mesh well with user changes
-to the configuration.
-(see [https://www.redhat.com/archives/freeipa-devel/2013-September/msg00137.html],
-the <tt>40-delegation.update</tt> file, and other LDAP updater code for details)
-
-In the future these should be converted do "Managed" permissions, see below:
-
-=== "Managed" administrator groups ===
-
-This design introduces new groups, such as "User Readers" or
-"Netgroups Readers", whose members have read access to the respective areas.
-
-From the users' point of view, these are identical to the aforementioned
-"Default administrator groups".
-However, they will use an overhauled Permission system that correctly
-merges user settings and IPA changes on upgrades.
-
-=== Custom permissions ===
-
-Users can create custom permissions and assign them to user groups.
-These permissions are not managed by IPA (except possibly in the case of a
-security issue, permissions/ACIs might be secured automatically).
-
-Permissions can only be used to grant rights, not deny them.
-
-=== Anonymous access ===
-
-Anonymous access will be disabled, except for necessary information such as
-automount browsing for Solaris.
-
-TODO: Maybe: For backwards compatibility, it will be possible to enable the legacy rule
-that allows anonymous access to almost all information.
-
-User-level configuration of anonymous access is a separate effort and will
-be described in a separate design page. (TODO: we need something like self-service here)
-
 = Use Cases =
 
 TODO
 
 = Design =
 
-== Read rights ==
+== Managed Permissions ==
 
-The <tt>read</tt>, <tt>search</tt> and <tt>compare</tt> rights will be added
-to Permissions.
-They will work the same way as existing <tt>add</tt>, <tt>write</tt>
-and <tt>delete</tt>.
-
-== Permission flags  ==
-
-Permission objects can have flags in their "ipaPermissionType" attribute.
-Currently we use one such flag, SYSTEM, which means that the underlying ACI
-is not managed by the Permission object.
-The code does not even assume an underlying ACI exists for SYSTEM permissions.
-
-The permission flags will be repurposed to allow adding new
-functionality while retaining backwards compatibility.
-
-New flags will be added for additional features.
-Permissions that have an unknown flag will be assumed to have unknown
-semantics implemented in future IPA versions.
-Thus the underlying ACI will not be manipulated, just like with current SYSTEM
-flags.
-
-For compatibility with old versions of IPA, all new flags must be accompanied
-by SYSTEM, and permissions with either no flags or only the SYSTEM flag retain
-the old semantics.
-
-== MANAGED Permissions ==
-
-This change adds a new type of Permission, the MANAGED permission.
+[[V3/Permissions_V2|V2 permissions]] with the
+<tt>ipaPermDefaultAttr</tt> attribute set are called Managed permissions.
 
 These permissions will allow access to a set of attributes defined by IPA
 and kept up-to-date on upgrades, while allowing users to add or remove
@@ -130,26 +25,21 @@ specific attributes from the default list.
 
 To ensure that installing low-version replicas or disabling plugins does not
 revoke access to existing data, the default list of attributes will be kept
-in LDAP (in <tt>ipaPermDefaultAttr</tt>.
+in LDAP (in <tt>ipaPermDefaultAttr</tt>).
 On updates, new attributes will be added to this list.
+Users can not modify this list.
 
-There will be two attribute lists holding attributes the admin added and
-removed: <tt>ipaPermAllowedAttr</tt> and
-<tt>ipaPermExcludedAttrs</tt> respectively.
+There will be two attribute lists
+for holding attributes the admin added and removed:
+<tt>ipaPermAllowedAttr</tt> and <tt>ipaPermExcludedAttrs</tt> respectively.
+(In user-created permissions,
+<tt>ipaPermAllowedAttr</tt> is used for the same purpose as here,
+and the other two are empty.)
 
-Additionally, the <tt>ipaPermissionRight</tt> list will hold the rights
-granted (e.g. <tt>read</tt>, <tt>search</tt>, <tt>compare</tt>).
-Including this in the permission object allows the underlying ACI to be
-generated entirely from the permission.
-
-MANAGED permissions will have the flags {"SYSTEM", "MANAGED"}, and a new
-objectclass with these extra attributes:
-
-    attributeTypes: (2.16.840.1.113730.3.8.11.42 NAME 'ipaPermDefaultAttr' DESC 'IPA permission default attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
-    attributeTypes: (2.16.840.1.113730.3.8.11.43 NAME 'ipaPermAllowedAttr' DESC 'IPA permission explicitly allowed attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
-    attributeTypes: (2.16.840.1.113730.3.8.11.44 NAME 'ipaPermExcludedAttr' DESC 'IPA permission explicitly excluded attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
-    
-    objectClasses: (2.16.840.1.113730.3.8.12.20 NAME 'ipaManagedPermission' SUP top AUXILIARY MUST ( ipaManagedPermissionObject $ ipaManagedPermissionType $ ipaPermissionRight ) MAY ( ipaPermDefaultAttrs $ ipaPermAllowedAttrs $ ipaPermExcludedAttrs ) X-ORIGIN 'IPA v3' )
+When generating the ACI, the resulting attribute list will be
+computed by taking the <tt>ipaPermDefaultAttr</tt> set,
+adding any <tt>ipaPermAllowedAttr</tt>s,
+and then removing any <tt>ipaPermExcludedAttr</tt>.
 
 For example, this permission:
 
@@ -167,16 +57,18 @@ For example, this permission:
     ipaPermAllowedAttr: favoriteColor
     ipaPermExcludedAttr: givenName
     ipaPermType: SYSTEM
-    ipaPermType: MANAGED
+    ipaPermType: V2
 
 would allow users to read all default attributes except <tt>givenName</tt>,
 plus <tt>favoriteColor</tt>.
 
-== CLI & API ==
+=== CLI & API ===
 
-The <tt>permission-{mod,find}</tt> commands will gain two options,
-<tt>--allowed-attributes</tt> and <tt>--excluded-attributes</tt>.
-For <tt>permission-mod</tt> it is an error to use these with non-MANAGED
+TODO: This section is historical. The CLI/API design will change.
+
+The <tt>permission-{mod,find}</tt> commands will gain an option,
+<tt>--excluded-attributes</tt>.
+For <tt>permission-mod</tt> it is an error to use it with non-managed
 permissions.
 The <tt>permission-find</tt> command will also gain the
 <tt>--default-attributes</tt> option.
@@ -184,30 +76,8 @@ The <tt>permission-find</tt> command will also gain the
 The <tt>permission-{find,show}</tt> commands will output the two
 user-modifiable lists.
 
-The <tt>--attributes</tt> param will produce output as before, listing the
-attributes from the underlying ACI.
-
-TODO: Decide if setting <tt>--attributes</tt> will be allowed.
-
-=== Variant 1 ===
-
-When used with <tt>permission-mod</tt> on MANAGED permissions, IPA will consult
-the current list of attributes on the underlying ACI, add any missing or extra
-attributes to the respective list, then regenerate the ACI.
-
-For <tt>permission-mod</tt>, <tt>--attributes</tt> may not be used
-together with <tt>--allowed-attributes</tt> or <tt>--excluded-attributes</tt>.
-
-{{Admon/note||This variant would work with the current Web UI or scripts, but
-the behavior is not straightforward in all cases.
-For example, if the admin explicitly allowed an attribute that is default,
-setting attributes to the value it currently has would remove that attribute
-from the allowed set.
-}}
-
-=== Variant 2 ===
-
-For <tt>permission-mod</tt>, <tt>--attributes</tt> may not be used.
+The corresponding new API parameters will follow IPA naming conventions:
+<tt>ipapermdefaultattr</tt> and <tt>ipapermexcludedattr</tt>.
 
 == Marking Attributes in Plugins ==
 
@@ -221,28 +91,14 @@ necessary to modify IPA's update files to add plugin-specific permissions.
 == Adding permissions for default read permissions ==
 
 Default read permissions and privileges will be added for all IPA object types.
-The structure in LDAP will be the same as in the existing write permissions and
-privileges.
+Most read permissions will be for anounymous/any access.
 
 TODO list what will be added
 
-== Adding privileges and role for default read permissions ==
-
-The new read permission will be added to new read privileges, in similar manner
-to existing permisisons/privileges.
-
-The read privileges will be added to the respective "Admin" roles.
-
-All read privileges will be added to a new "Users" role.
-The ipausers group will be added to this role.
-
-(TODO: this is another case where IPA defaults and user settings are stored in
-the same place; if we ever need to change the defaults we'll have trouble
-keeping upgrades clean)
-
 == ACI.txt ==
 
-TODO: Flesh this out more
+TODO: Flesh this out more. Possibly combine with an
+[https://fedorahosted.org/freeipa/ticket/4035 ACI audit tool].
 
 To ensure that permission changes are properly reviewed, a summary file
 similar to API.txt will be generated, and it will be checked on each build.
@@ -252,27 +108,13 @@ It will contain a summary of the default managed permissions.
 A <tt>makeaci</tt> script similar to <tt>makeapi</tt> will be provided and
 called to check the file on each build.
 
-== TODO ==
-
-The following is left to future design documents:
-
-* Managing anonymous access
-* Converting existing default permissions to MANAGED
-
-== Disabling the anonymous access ACI ==
-
-TODO (make it possible to re-enable it in case users run into trouble?)
-
 = Implementation =
 
 No additional requirements or changes discovered during the implementation phase.
-(when they were, the design document changed!)
 
 = Feature Managment =
 
 === UI ===
-
-The read, search, compare rights will be added to permission UI.
 
 TODO: Managed permissions will need UI changes
 
@@ -290,14 +132,13 @@ N/A, ACIs and permissions are replicated.
 
 = Updates and Upgrades =
 
-The feature was designed to ensure that:
+Old servers will not be able to modify Managed permissions,
+except adding/removing them to/from prigileges.
+Details are in [[V3/Permissions_V2|Permissions V2]],
+which will be implemented in the same release.
 
-* Old-style permissions continue working on old IPA servers
-* Old IPA servers cannot modify new-style permissions (but can assign them to privileges)
-* Assigning new-style premissions to privileges has same effect on old and new servers
-
-Additionally, steps were taken to allow future similar extensions of permission
-functionality.
+(If we don't make it in the same release,
+they will need a new permission flag)
 
 = Dependencies =
 

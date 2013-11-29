@@ -1,17 +1,17 @@
 __NOTOC__
 
 {{Admon/important|Work in progress|This design is not complete yet.
-  However if you have any comments, please feel free to discuss them.}}
+  However if you have any comments, please feel free to discuss.}}
 
 = Overview =
 
 The internal workings of Permissions
 and their relationship to ACIs are overhauled.
 
-* Permission flags are extended to insure backwards compatibility
+* Permission flags are extended to ensure backwards compatibility
 * Permission ACIs may be located in any container, not just $SUFFIX
 * Permission entries now contain all data needed to (re-)generate (or check) the ACI
-* It is now possible to grand read rights
+* It is now possible to grant read rights
 
 = Use Cases =
 
@@ -61,26 +61,37 @@ This means IPA code will no longer need to parse ACIs
 Any change to a Permission will result
 in removing any old ACI and adding a new one.
 
-The new attributes (including those from other related designs) is as follows:
+The new schema (including schema from other related designs) is as follows:
 
  attributeTypes: (2.16.840.1.113730.3.8.11.42 NAME 'ipaPermDefaultAttr' DESC 'IPA permission default attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.43 NAME 'ipaPermAllowedAttr' DESC 'IPA permission explicitly allowed attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.44 NAME 'ipaPermExcludedAttr' DESC 'IPA permission explicitly excluded attribute' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.45 NAME 'ipaPermBindRuleType' DESC 'IPA permission bind rule type' EQUALITY caseExactMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.46 NAME 'ipaPermLocation' DESC 'Location of IPA permission ACI' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 SINGLE-VALUE X-ORIGIN 'IPA v3' )
- attributeTypes: (2.16.840.1.113730.3.8.11.47 NAME 'ipaPermRight' DESC 'IPA permission rights' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE X-ORIGIN 'IPA v3' )
+ attributeTypes: (2.16.840.1.113730.3.8.11.47 NAME 'ipaPermRight' DESC 'IPA permission rights' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.48 NAME 'ipaPermTargetFilter' DESC 'IPA permission target filter' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
  attributeTypes: (2.16.840.1.113730.3.8.11.49 NAME 'ipaPermTarget' DESC 'IPA permission target' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 X-ORIGIN 'IPA v3' )
+ 
+ objectClasses: (2.16.840.1.113730.3.8.12.21 NAME 'ipaPermissionV2' DESC 'IPA Permission objectclass, version 2' SUP ipaPermission AUXILIARY MUST ( ipaPermissionType $ ipaPermBindRuleType $ ipaPermRight $ ipaPermLocation ) MAY ( ipaPermDefaultAttr $ ipaPermAllowedAttr $ ipaPermExcludedAttr $ ipaPermTargetFilter $ ipaPermTarget ) X-ORIGIN 'IPA v3' )
 
 All of these will be added as MAY to the <tt>ipaPermission</tt> objectclass.
 The <tt>ipaUniqueID</tt> attribute will also be added to <tt>ipaPermission</tt>.
 
-* ipaPermAllowedAttr lists the attributes of the ACI
-* the other ipaPerm*Attr are for Managed permissions, explained in [[V3/Managed Read permissions]]
-* ipaPermBindRuleType is for general access ACIs, explained in [[V3/Anonymous and Any permissions]]
-* ipaPermLocation is the location of the ACI in the tree, explained below
-* ipaPermRight is the right(s) the permission grants (add, write, delete, etc.)
-* ipaPermTargetFilter & ipaPermTarget contain the corresponding parts of the ACI
+* ipaPermAllowedAttr lists the attributes of the ACI; for example:
+    ipaPermAllowedAttr: cn
+    ipaPermAllowedAttr: sn
+* the other ipaPerm*Attr are for Managed permissions, will be explained in [[V3/Managed Read permissions]]
+* ipaPermBindRuleType is for general access ACIs, will be explained in [[V3/Anonymous and Any permissions]]; default:
+    ipaPermBindRuleType: permission
+* ipaPermLocation is the location of the ACI in the tree. If missing, the ACI is in the SUFFIX.
+    ipaPermLocation: cn=users,cn=accounts,dc=idm,dc=lab,dc=eng,dc=brq,dc=redhat,dc=com
+* ipaPermRight is the right(s) the permission grants; for example:
+    ipaPermRight: add
+    ipaPermRight: write
+* ipaPermTargetFilter is the target filter part of the ACI, for example:
+    ipaPermTargetFilter: (memberOf=cn=ipausers,cn=groups,cn=accounts,dc=idm,dc=lab,dc=eng,dc=brq,dc=redhat,dc=com)
+* ipaPermTarget is the target part of the ACI, as a DN with possible wildcards; for example:
+    ipaPermTarget: uid=*,cn=users,cn=accounts,dc=idm,dc=lab,dc=eng,dc=brq,dc=redhat,dc=com
 
 == Moving ACIs out of the root ==
 
@@ -118,8 +129,6 @@ than the one where V2 permissions are introduced.
  / ipapermlocation     subtree
  \ subtree             (no_cli)
 
-For output, the variant used will depend on the API version.
-
 A new no-cli option will be added: <tt>ipapermtarget</tt>.
 
 IPA will validate the filter before setting it by performing a search.
@@ -128,18 +137,52 @@ Finally, 3 existing options will be available to set the above:
 
 <tt>memberof</tt> will set target filter to <tt>(memberOf={group})</tt>,
 after checking that the group exists.
+<tt>memberof</tt> and <tt>filter</tt> are mutually exclusive.
 
 <tt>targetgroup</tt> will set target to <tt>ldap:///{group}</tt>,
 after checking that the group exists.
+<tt>targetgroup</tt> and <tt>target</tt> are mutually exclusive.
 
-<tt>type</tt> will set target filter and location to one of pre-defined values
+<tt>type</tt> will set target and subtree to one of pre-defined values
 correspondint to IPA object types.
-It cannot be specified together with <tt>ipaPermLocation</tt>.
-
-<tt>memberof</tt>, <tt>targetgroup</tt>, <tt>type</tt>, <tt>filter</tt> are mutually exclusive.
+<tt>type</tt>, <tt>subtree</tt> and <tt>target</tt> are mutually exclusive.
 
 These values will be output
 if the filter/target/location values match the respective patterns.
+
+Note that this introduces an incompatibility:
+when a permission "type" is set, updating it to
+"memberof" or "targetgroup" will NOT reset all aspects of "type",
+as was the case before.
+(This change is part of
+[https://fedorahosted.org/freeipa/ticket/2355 ticket 2355] -
+Allow filter and subtree to be added in same permission)
+
+== add_noaci command ==
+
+There is no expectation of backwards compatibility for
+<tt>permission_add_noaci</tt>.
+This command will be marked as internal.
+
+== Examples ==
+
+See the Test Plan below.
+
+== Compatibility with old clients ==
+
+For clients which report an API version lower than the one of this feature,
+the output will be modified to keep basic compatibility.
+A new "permissions2" capability will be added to track the version.
+
+Attributes ipapermright, ipapermallowedattr, ipapermtargetfilter, ipapermlocation
+will be output under their old names: permissions, attrs, filter, subtree.
+
+The <tt>type</tt>, <tt>targetgroup</tt>, and <tt>memberof</tt> will be output
+as single values rather than single-element lists.
+
+For <tt>subtree</tt> (ipapermlocation),
+the entry will also be made single-valued,
+and a 'ldap:///' prefix will be added to it.
 
 == Modifying and Upgrading Permissions ==
 
@@ -149,29 +192,32 @@ A permission object can not be modified if:
 
 The process for modifying a permission (and its ACI) is as follows:
 
-1. Before a permission object is changed, its corresponding ACI is found using
-the old permission name and ipaPermLocation (which defaults to $SUFFIX).
+1. Before a permission object is changed,
+location of its corresponding ACI is found
+using the old permission name and ipaPermLocation (which defaults to $SUFFIX).
 
-2. If the permission object does not have any flags (i.e. it is an old-style
-permission), the ACI is parsed and appropriate attributes are set to values
-from the ACI, and SYSTEM and V2 flags are added.
+2. If the permission object does not have any flags
+(i.e. it is an old-style permission),
+the ACI is parsed and appropriate attributes
+are set on the Python representation of the entry,
+the SYSTEM and V2 flags are added,
+and the ipaPermissionV2 objectclass is added.
+The new ACI string is calculated from this.
 
-3. The old ACI is deleted (regardless of whether an upgrade took place).
+3. If the location (subtree) did *not* change,
+the old ACI is replaced by the new ACI.
 
-4. The permission entry is changed.
+4. If the location (subtree) changed, the old ACI is removed.
 
-5. A new ACI text is created from updated attributes and added to the
-corresponding location.
+5. The permission entry is updated in LDAP.
 
-The process through the following states, so only they are possible results if
-an error occurs:
-* old permission, old ACI
-* old permission, no ACI
-* new permission, no ACI
-* new permission, new ACI
+6. If the location (subtree) changed, the new ACI is added.
 
-In all cases where data ends up inconsistent, no access is granted:
-the process is fail-secure.
+== Adding and Deleting Permissions ==
+
+When adding, the ACI is inserted after the permission entry.
+
+When deleting, the ACI is deleted first, then the permission entry.
 
 == Mass update ==
 
@@ -195,7 +241,16 @@ because old-style permisisons can be created on old servers.)
 Old-style permissions will continue be recognized by permission-{find,show}
 commands.
 
-TODO: details
+The show command will upgrade the entry (in memory, without commiting to LDAP),
+before outputting data.
+
+This "output only" upgrade is the same as step 2 in
+"Modifying and Upgrading Permissions", except it will not touch the flags,
+i.e. "V2" and "SYSTEM" will not be added.
+
+The find command will iterate through all old-stryle permissions,
+do the "output-only" upgrade on each one, and filter the result based on
+given options.
 
 == Read rights ==
 
@@ -242,8 +297,6 @@ No new package and library dependencies.
 
 = External Impact =
 
-Tests might need to be adjusted.
-
 TODO: Does documentation cover premission/ACI internals, or API?
 It might need updating.
 
@@ -253,7 +306,7 @@ All changes are to the DIT which is backed up normally.
 
 = Test Plan =
 
-TODO; the permission tests need to be extended.
+{{:V3/Permissions_V2/tests}}
 
 = RFE Author =
 
