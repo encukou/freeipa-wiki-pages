@@ -5,79 +5,145 @@ __NOTOC__
 
 = Overview =
 
-IPA is extended to include a system of fine-grained read permissions
-that administrators can assign to specific users or groups.
+The IPA framework will handle default permissions more robustly with respect
+to IPA updates and user-made changes.
+
+In the future,
+this allow us to create a system of fine-grained, user-controllable permissions
+with good defaults and predictable behavior over upgrades.
 
 = Use Cases =
 
-TODO
+No significant externally visible features are added;
+this update will just ''enable'' a new, more restricted type of permissions.
+
+No managed permissions will be actually added in this update;
+that will be part of [https://fedorahosted.org/freeipa/ticket/3566 ticket #3566].
+Also there is no way for the user to add their own managed permissions.
+
+= Documentation draft =
+
+This documentation draft explains the behavior from
+the user's point of view:
+
+"Managed" permissions are those permissions that come pre-installed with IPA,
+and are updated in new releases to cover new functionality.
+They behave like regular, user-created permissions, with these differences:
+
+* Their name, location and target can not be modified
+* They cannot be deleted (but note that setting default bindtype and removing from all privileges will effectively disable a permission)
+* They have three sets of attributes:
+** ''default'' attributes, managed by IPA, cannot be changed by the user
+** ''allowed'' attributes (--attrs in the CLI) are extra attrs that the user has added
+** ''excluded'' attributes (--excludedattrs in the CLI) are those that the user has removed
+
+The permission applies to all attributes
+that appear in either its ''default'' or ''allowed'' sets, but not in its
+''excluded'' set.
+
+Newer versions of IPA may add additional attributes to the ''default'' set.
+Attributes added this way should be listed in the corresponding Release Notes.
+If some of the new attributes are undesirable, add them to the corresponding
+''excluded'' list before the upgrade.
+
+Note that user-created permissions only use the ''allowed'' set,
+the other two are simply empty.
+
+
+= The problem =
+
+Currently, updates to permissions that come with IPA are specified in .update
+files.
+
+This approach has the disadvantage that if the user modifies the permission,
+the updater will not recognize it, so it will end up not being updated.
+This may result in reduced functionality (if needed attributes are not
+added), or security issues (if attributes are not deleted).
+
 
 = Design =
 
 == Managed Permissions ==
 
 [[V3/Permissions_V2|V2 permissions]] with the
-<tt>ipaPermDefaultAttr</tt> attribute set are called Managed permissions.
+<tt>MANAGED</tt> flag set are called Managed permissions.
 
-These permissions will allow access to a set of attributes defined by IPA
+These permissions grant access to a set of attributes defined by IPA
 and kept up-to-date on upgrades, while allowing users to add or remove
 specific attributes from the default list.
 
+The user can also manage the bind rule and privilege membership of Managed
+permissions.
+
+The other aspects of Managed permissions (name, location, target) are not
+modifiable by the user.
+The user cannot manually add new Managed permissions, or delete existing ones
+(unless --force is applied; but later we may restrict this via ACIs).
+
 To ensure that installing low-version replicas or disabling plugins does not
 revoke access to existing data, the default list of attributes will be kept
-in LDAP (in <tt>ipaPermDefaultAttr</tt>).
-On updates, new attributes will be added to this list.
-Users can not modify this list.
+in LDAP as <tt>ipaPermDefaultAttr</tt>.
+Users can not modify this list via the framework.
+On updates, new attributes will ''only'' be added to this list.
+(To remove attributes, one would need to write a separate update plugin.)
 
-There will be two attribute lists
+There will be two attribute types
 for holding attributes the admin added and removed:
 <tt>ipaPermAllowedAttr</tt> and <tt>ipaPermExcludedAttrs</tt> respectively.
 (In user-created permissions,
 <tt>ipaPermAllowedAttr</tt> is used for the same purpose as here,
-and the other two are empty.)
+and excluded & default are empty.)
+See [[V3/Permissions V2]] for the schema definition.
 
 When generating the ACI, the resulting attribute list will be
 computed by taking the <tt>ipaPermDefaultAttr</tt> set,
 adding any <tt>ipaPermAllowedAttr</tt>s,
-and then removing any <tt>ipaPermExcludedAttr</tt>.
+and then removing any <tt>ipaPermExcludedAttr</tt>s.
 
 For example, this permission:
 
-    dn: cn=Read Users,cn=permissions,cn=pbac,$SUFFIX
-    cn: Read Users
-    objectClass: top
-    objectClass: groupOfNames
-    objectclass: ipaPermission
-    objectclass: ipaManagedPermission
-    ipaPermDefaultAttr: cn
-    ipaPermDefaultAttr: sn
-    ipaPermDefaultAttr: givenName
-    ipaPermDefaultAttr: l
-    ...
-    ipaPermAllowedAttr: favoriteColor
-    ipaPermExcludedAttr: givenName
-    ipaPermType: SYSTEM
-    ipaPermType: V2
+ dn: cn=Read Users,cn=permissions,cn=pbac,$SUFFIX
+ cn: Read Users
+ ipaPermDefaultAttr: cn
+ ipaPermDefaultAttr: sn
+ ipaPermDefaultAttr: givenName
+ ipaPermDefaultAttr: l
+ ...
+ ipaPermAllowedAttr: favoriteColor
+ ipaPermExcludedAttr: givenName
+ objectClass: top
+ objectClass: groupOfNames
+ objectclass: ipaPermission
+ objectclass: ipaManagedPermission
+ ipaPermType: SYSTEM
+ ipaPermType: V2
+ ipaPermType: MANAGED
+ ipaPermLocation: cn=users,cn=accounts,$SUFFIX
+ ipaPermRight: write
+ ipaPermTarget: uid=*,cn=users,cn=accounts,$SUFFIX
+ ipaPermBindRuleType: permission
 
-would allow users to read all default attributes except <tt>givenName</tt>,
-plus <tt>favoriteColor</tt>.
+would allow users to read all default user attributes except
+<tt>givenName</tt>, plus additionally <tt>favoriteColor</tt>.
 
 === CLI & API ===
 
-TODO: This section is historical. The CLI/API design will change.
-
-The <tt>permission-{mod,find}</tt> commands will gain an option,
-<tt>--excluded-attributes</tt>.
+The <tt>permission-{mod,find}</tt> commands will gain a new option,
+<tt>--excludedattrs</tt> (API: <tt>ipapermexcludedattr</tt>).
 For <tt>permission-mod</tt> it is an error to use it with non-managed
 permissions.
-The <tt>permission-find</tt> command will also gain the
-<tt>--default-attributes</tt> option.
 
-The <tt>permission-{find,show}</tt> commands will output the two
-user-modifiable lists.
+The <tt>permission-{mod,find,show}</tt> commands will output all three
+lists (<tt>ipapermdefaultattr</tt>, <tt>ipapermallowedattr</tt>,
+<tt>ipapermexcludedattr</tt>),
+as well as the computed list of effective attributes.
 
-The corresponding new API parameters will follow IPA naming conventions:
-<tt>ipapermdefaultattr</tt> and <tt>ipapermexcludedattr</tt>.
+It is an error to set the <tt>ipapermlocation</tt>,
+<tt>ipapermtargetfilter</tt>, or <tt>ipapermtarget</tt>
+of a managed permission.
+(This means that it's an error to ise the API options <tt>subtree</tt>,
+<tt>filter</tt>, <tt>target</tt>, <tt>memberof</tt>, <tt>targetgroup</tt>,
+or <tt>type</tt> with a managed permission.)
 
 == Marking Attributes in Plugins ==
 
@@ -88,17 +154,10 @@ to manage that object.
 This will allow plugins to be more self-contained; it will no longer be
 necessary to modify IPA's update files to add plugin-specific permissions.
 
-== Adding permissions for default read permissions ==
-
-Default read permissions and privileges will be added for all IPA object types.
-Most read permissions will be for anounymous/any access.
-
-TODO list what will be added
-
 == ACI.txt ==
 
-TODO: Flesh this out more. Possibly combine with an
-[https://fedorahosted.org/freeipa/ticket/4035 ACI audit tool].
+{{Admon/note|TODO|Flesh this out more. Possibly combine with an
+[https://fedorahosted.org/freeipa/ticket/4035 ACI audit tool].}}
 
 To ensure that permission changes are properly reviewed, a summary file
 similar to API.txt will be generated, and it will be checked on each build.
@@ -136,9 +195,7 @@ Old servers will not be able to modify Managed permissions,
 except adding/removing them to/from prigileges.
 Details are in [[V3/Permissions_V2|Permissions V2]],
 which will be implemented in the same release.
-
-(If we don't make it in the same release,
-they will need a new permission flag)
+Managed permissions use the MANAGED flag.
 
 = Dependencies =
 
@@ -154,7 +211,9 @@ ACIs, permissions, privileges and roles are already included in backup & restore
 
 = Test Plan =
 
-TODO
+{{Admon/note|TODO|Tests for plugin-configured permissions, and for updates}}
+
+{{:V3/Managed Read permissions/tests}}
 
 = RFE Author =
 

@@ -158,6 +158,10 @@ as was the case before.
 [https://fedorahosted.org/freeipa/ticket/2355 ticket 2355] -
 Allow filter and subtree to be added in same permission)
 
+Also Note that <tt>subtree</tt> (ipapermlocation) must now
+always refer to an existing entry;
+wildcards or non-existent DNs are not allowed.
+
 == add_noaci command ==
 
 There is no expectation of backwards compatibility for
