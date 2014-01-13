@@ -1,0 +1,144 @@
+__NOTOC__
+
+{{Admon/important|Work in progress|This design is not complete yet.
+  However if you have any comments, please feel free to discuss.}}
+
+= Overview =
+
+Ticket [https://fedorahosted.org/freeipa/ticket/4074 #4074]; also see the
+[http://www.redhat.com/archives/freeipa-devel/2013-December/msg00063.html -devel thread]
+
+The permission target filter will become multi-valued.
+
+"Type" permissions, (such as most default permissions),
+will use objectclass target filters instead of wildcard targets.
+
+This is a change to [[V3/Permissions_V2|Permissions_V2]]
+that will be implemented in the same release.
+
+= Use Cases =
+
+TODO
+
+= Design=
+
+== Multi-valued ipapermtargetfilter ==
+
+The <tt>ipapermtargetfilter</tt> attribute,
+and the corresponding <tt>filter</tt> option,
+will become multi-valued.
+When more than one value is present, they all need to apply --
+they will be joined by <tt>(& )</tt> to create the ACI.
+
+== Multivalued --memberof ==
+
+Currently the <tt>--memberof</tt> option of <tt>permission-mod</tt> sets the
+targetfilter to <tt>(memberof=<i>groupname</i>)</tt>.
+
+The option will become multi-valued, and it will no longer conflict
+with the <tt>--filter</tt> option.
+
+When <tt>--memberof</tt> is specified,
+the <tt>permission-mod</tt> command will remove any
+existing <tt>(memberof=...)</tt> filter(s), but leave any other filters;
+then add any additional filter(s) specified
+by the <tt>--memberof</tt>, <tt>--type</tt>, <tt>--filter</tt> options.
+
+The <tt>permission-add</tt> and <tt>permission-find</tt> commands will only
+add the memberof filter to any filter(s)
+specified by other options.
+
+On output, memberof filter(s) matching existing group name(s) will
+cause corresponding memberof output items.
+
+== --type sets (objectclass=...) targetfilter ==
+
+Currently the <tt>--type</tt> option sets the ACI location
+to the appropriate container DN, and the
+target to a wildcard DN: <tt><i>uid_attr</i>=*,<i>container_dn</i></tt>.
+
+Instead of setting the target,
+the option will now set the target filter to <tt>(objectclass=...)</tt>
+(or possibly, multiple such filters).
+
+Similarly to <tt>--memberof</tt>, <tt>permission-mod</tt>'s <tt>--type</tt>
+will remove any existing <tt>(objectclass=...)</tt> filter(s).
+
+On output, if the ACI location matches an eligible object type,
+and proper objectclass filters are present,
+a corresponding type will be reported.
+
+=== Canonical objectclasses for filter ===
+
+Each IPA object type that can be used for the <tt>--type</tt> option
+will be assigned an object class that will be used for the filter.
+These will initially be:
+
+; user
+: posixaccount
+; group
+: ipausergroup
+; host
+: ipahost
+; service
+: ipaservice
+; hostgroup
+: ipahostgroup
+; netgroup
+: ipanisnetgroup
+; dnsrecord
+: idnsrecord
+
+These will be declared in their respective plugin classes.
+The existence of this declaration will make the type usable
+in a permission (in contrast with the current situation,
+where a list of types is hardcoded in the permission & ACI plugins).
+
+= Implementation =
+
+No additional requirements or changes discovered during the implementation phase.
+
+= Feature Management =
+
+=== UI ===
+
+The necessary UI design and changes
+should be done as part of [[V3/Permissions V2]].
+
+=== CLI ===
+
+Permission <tt>--memberof</tt> and <tt>--filter</tt> options
+will now accept multiple values.
+
+= Major configuration options and enablement =
+
+N/A, always on
+
+= Replication =
+
+N/A
+
+= Updates and Upgrades =
+
+This change will be implemented in the same release as [[V3/Permissions V2]].
+See that design for update concerns.
+
+= Dependencies =
+
+No new package and library dependencies.
+
+= External Impact =
+
+Externally, this is a part of [[V3/Permissions V2]].
+
+= Backup and Restore =
+
+N/A
+
+= Test Plan =
+
+TODO
+
+= RFE Author =
+
+[[User:Pviktorin|Petr Viktorin]]
