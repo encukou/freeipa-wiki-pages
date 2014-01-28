@@ -34,11 +34,11 @@ They behave like regular, user-created permissions, with these differences:
 * They cannot be deleted (but note that setting default bindtype and removing from all privileges will effectively disable a permission)
 * They have three sets of attributes:
 ** ''default'' attributes, managed by IPA, cannot be changed by the user
-** ''allowed'' attributes (--attrs in the CLI) are extra attrs that the user has added
+** ''included'' attributes (--includedattrs in the CLI) are extra attrs that the user has added
 ** ''excluded'' attributes (--excludedattrs in the CLI) are those that the user has removed
 
 The permission applies to all attributes
-that appear in either its ''default'' or ''allowed'' sets, but not in its
+that appear in either its ''default'' or ''included'' sets, but not in its
 ''excluded'' set.
 
 Newer versions of IPA may add additional attributes to the ''default'' set.
@@ -46,8 +46,9 @@ Attributes added this way should be listed in the corresponding Release Notes.
 If some of the new attributes are undesirable, add them to the corresponding
 ''excluded'' list before the upgrade.
 
-Note that user-created permissions only use the ''allowed'' set,
-the other two are simply empty.
+Note that attributes of user-created permissions work the same way,
+but since the ''default'' and ''excluded'' sets are empty,
+only the ''included'' set determines the effective attributes.
 
 
 = The problem =
@@ -85,19 +86,19 @@ revoke access to existing data, the default list of attributes will be kept
 in LDAP as <tt>ipaPermDefaultAttr</tt>.
 Users can not modify this list via the framework.
 On updates, new attributes will ''only'' be added to this list.
-(To remove attributes, one would need to write a separate update plugin.)
+(To remove attributes, we would need to write a separate update plugin.)
 
 There will be two attribute types
 for holding attributes the admin added and removed:
-<tt>ipaPermAllowedAttr</tt> and <tt>ipaPermExcludedAttrs</tt> respectively.
+<tt>ipaPermIncludedAttr</tt> and <tt>ipaPermExcludedAttr</tt> respectively.
 (In user-created permissions,
-<tt>ipaPermAllowedAttr</tt> is used for the same purpose as here,
+<tt>ipaPermIncludedAttr</tt> is used for the same purpose as here,
 and excluded & default are empty.)
 See [[V3/Permissions V2]] for the schema definition.
 
 When generating the ACI, the resulting attribute list will be
 computed by taking the <tt>ipaPermDefaultAttr</tt> set,
-adding any <tt>ipaPermAllowedAttr</tt>s,
+adding any <tt>ipaPermIncludedAttr</tt>s,
 and then removing any <tt>ipaPermExcludedAttr</tt>s.
 
 For example, this permission:
@@ -109,7 +110,7 @@ For example, this permission:
  ipaPermDefaultAttr: givenName
  ipaPermDefaultAttr: l
  ...
- ipaPermAllowedAttr: favoriteColor
+ ipaPermIncludedAttr: favoriteColor
  ipaPermExcludedAttr: givenName
  objectClass: top
  objectClass: groupOfNames
@@ -128,15 +129,24 @@ would allow users to read all default user attributes except
 
 === CLI & API ===
 
-The <tt>permission-{mod,find}</tt> commands will gain a new option,
+The <tt>permission-{mod,find}</tt> commands will gain two new options,
+<tt>--includedattrs</tt> (API: <tt>ipapermincludedattr</tt>) and
 <tt>--excludedattrs</tt> (API: <tt>ipapermexcludedattr</tt>).
-For <tt>permission-mod</tt> it is an error to use it with non-managed
-permissions.
+For <tt>permission-mod</tt> it is an error to use <tt>--excludedattrs</tt>
+with non-managed permissions.
 
-The <tt>permission-{mod,find,show}</tt> commands will output all three
+For a managed permission, the <tt>permission-{mod,find,show}</tt> commands
+will output all three
 lists (<tt>ipapermdefaultattr</tt>, <tt>ipapermallowedattr</tt>,
 <tt>ipapermexcludedattr</tt>),
 as well as the computed list of effective attributes.
+
+For a non-managed permission, <tt>permission-{mod,find,show}</tt>
+will only output the effective attributes (<tt>attrs</tt>).
+With <tt>--all</tt>, the included attributes will also be included.
+As any missing attribute course excluded and default will not be output.
+With <tt>--raw</tt>, only <tt>ipaPermIncludedAttr</tt> and not <tt>attrs</tt>
+wil be output.
 
 It is an error to set the <tt>ipapermlocation</tt>,
 <tt>ipapermtargetfilter</tt>, or <tt>ipapermtarget</tt>
@@ -153,6 +163,10 @@ to manage that object.
 
 This will allow plugins to be more self-contained; it will no longer be
 necessary to modify IPA's update files to add plugin-specific permissions.
+
+== Managed Permission updater ==
+
+TODO
 
 == ACI.txt ==
 
