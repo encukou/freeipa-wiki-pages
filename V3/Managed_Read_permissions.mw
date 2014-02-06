@@ -120,7 +120,7 @@ For example, this permission:
  ipaPermType: V2
  ipaPermType: MANAGED
  ipaPermLocation: cn=users,cn=accounts,$SUFFIX
- ipaPermRight: write
+ ipaPermRight: read
  ipaPermTarget: uid=*,cn=users,cn=accounts,$SUFFIX
  ipaPermBindRuleType: permission
 
@@ -145,7 +145,7 @@ For a non-managed permission, <tt>permission-{mod,find,show}</tt>
 will only output the effective attributes (<tt>attrs</tt>).
 With <tt>--all</tt>, the included attributes will also be included.
 As any missing attribute course excluded and default will not be output.
-With <tt>--raw</tt>, only <tt>ipaPermIncludedAttr</tt> and not <tt>attrs</tt>
+With <tt>--raw</tt>, only <tt>ipaPermIncludedAttr</tt>, and not <tt>attrs</tt>,
 wil be output.
 
 It is an error to set the <tt>ipapermlocation</tt>,
