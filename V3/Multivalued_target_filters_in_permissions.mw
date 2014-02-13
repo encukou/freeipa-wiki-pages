@@ -10,7 +10,7 @@ Ticket [https://fedorahosted.org/freeipa/ticket/4074 #4074]; also see the
 
 The permission target filter will become multi-valued.
 
-"Type" permissions, (such as most default permissions),
+"Type" permissions, such as most default permissions,
 will use objectclass target filters instead of wildcard targets.
 
 This is a change to [[V3/Permissions_V2|Permissions_V2]]
@@ -137,7 +137,7 @@ N/A
 
 = Test Plan =
 
-TODO
+{{:V3/Multivalued target filters in permissions/tests}}
 
 = RFE Author =
 
