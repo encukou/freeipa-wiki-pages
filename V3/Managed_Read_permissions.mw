@@ -155,18 +155,65 @@ of a managed permission.
 <tt>filter</tt>, <tt>target</tt>, <tt>memberof</tt>, <tt>targetgroup</tt>,
 or <tt>type</tt> with a managed permission.)
 
-== Marking Attributes in Plugins ==
+== Default Permission Updater ==
 
-The IPA Object plugins will gain a new attribute, <tt>default_permissions</tt>,
+A server post-update plugin will walk through ipalib <tt>Object</tt> plugins
+and create/update managed permissions pertaining to them.
+
+Names of such default permissions are ''required'' to start with "ipa:",
+so that default permissions added in future IPA releases do not conflict
+with user-created permissions.
+The ":" character will not be usable in <tt>permission-add</tt>.
+(It will be usable in <tt>permission-mod</tt> and <tt>permission-del</tt>,
+where managed permissions are subject to the limitations stated above.)
+
+The IPA Object plugins will gain a new attribute, <tt>managed_permissions</tt>,
 which will describe the permissions that are to be added by default
 to manage that object.
 
 This will allow plugins to be more self-contained; it will no longer be
-necessary to modify IPA's update files to add plugin-specific permissions.
+necessary to modify IPA's update files to add the common cases
+of plugin-specific permissions.
 
-== Managed Permission updater ==
+The <tt>objectclass</tt>, <tt>ipapermlocation</tt> and an objectclass filter
+will be added to the default permission as if
+<tt>permission-add</tt> was used with the corresponding <tt>--type</tt>.
 
-TODO
+The flags (<tt>ipapermissiontype</tt>) will be set to <tt>SYSTEM, V2, MANAGED</tt>.
+
+Other attributes of the Permission will be taken from the
+<tt>managed_permissions</tt> entry.
+For example, the entry for the netgroup plugin would look like this:
+
+    managed_permissions = {
+        'ipa:Read Netgroups': {
+            'ipapermbindruletype': 'all',
+            'ipapermright': {'read', 'search', 'compare'},
+            'ipapermdefaultattr': {
+                'cn', 'description', 'hostcategory', 'ipaenabledflag',
+                'ipauniqueid', 'nisdomainname', 'usercategory'
+            },
+            'replaces_global_anonymous_aci': True,
+        },
+        'ipa:Read Netgroup Membership': {
+            'ipapermbindruletype': 'all',
+            'ipapermright': {'read', 'search', 'compare'},
+            'ipapermdefaultattr': {
+                'externalhost', 'member', 'memberof', 'memberuser'
+            },
+            'replaces_global_anonymous_aci': True,
+        },
+    }
+
+; ipapermbindruletype, ipapermright
+: Directly used as attributes on the permission.
+; ipapermdefaultattr
+: Used as attribute of the permission.
+: When upgrading, only new values are added, all old values are kept.
+: (This means installing/updating to a low-version replica will not remove permissions.)
+; replaces_global_anonymous_aci
+: If true, any attributes specified (denied) in the legacy global anonymous read ACI will be added to excluded_attributes of the new permission.
+: Has no effect when existing permissions are updated.
 
 == ACI.txt ==
 
