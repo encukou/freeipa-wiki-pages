@@ -167,9 +167,9 @@ The ":" character will not be usable in <tt>permission-add</tt>.
 (It will be usable in <tt>permission-mod</tt> and <tt>permission-del</tt>,
 where managed permissions are subject to the limitations stated above.)
 
-The IPA Object plugins will gain a new attribute, <tt>managed_permissions</tt>,
-which will describe the permissions that are to be added by default
-to manage that object.
+The IPA Object plugins will gain a new Python attribute,
+<tt>managed_permissions</tt>, which will hold a template for the permissions
+that are to be added by default to manage that object.
 
 This will allow plugins to be more self-contained; it will no longer be
 necessary to modify IPA's update files to add the common cases
@@ -182,7 +182,7 @@ will be added to the default permission as if
 The flags (<tt>ipapermissiontype</tt>) will be set to <tt>SYSTEM, V2, MANAGED</tt>.
 
 Other attributes of the Permission will be taken from the
-<tt>managed_permissions</tt> entry.
+<tt>managed_permissions</tt> template.
 For example, the entry for the netgroup plugin would look like this:
 
     managed_permissions = {
@@ -214,6 +214,75 @@ For example, the entry for the netgroup plugin would look like this:
 ; replaces_global_anonymous_aci
 : If true, any attributes specified (denied) in the legacy global anonymous read ACI will be added to excluded_attributes of the new permission.
 : Has no effect when existing permissions are updated.
+
+TODO: There will also be a list of default permissions not bound to an Object.
+It will be processed in the same way, but the template will have explicit
+<tt>ipapermlocation</tt> and <tt>ipapermfilter</tt>.
+
+=== Replacing legacy default permissions ===
+
+Another entry in the <tt>managed_permissions</tt>template,
+<tt>replaces</tt>, will be used for
+replacing legacy permissions with new managed ones. Example:
+
+    managed_permissions = {
+        'ipa:Modify SUDO Rule': {
+            'ipapermbindruletype': 'permission',
+            'ipapermright': {'write'},
+            'ipapermdefaultattr': {
+                'description', 'ipaenabledflag', 'usercategory',
+                'hostcategory', 'cmdcategory', 'ipasudorunasusercategory',
+                'ipasudorunasgroupcategory', 'externaluser',
+                'ipasudorunasextuser', 'ipasudorunasextgroup', 'memberdenycmd',
+                'memberallowcmd', 'memberuser'
+            },
+            'replaces': {
+                'cn': 'Modify Sudo rule',
+                'ipapermincludedattr': {
+                    'description', 'ipaenabledflag', 'usercategory',
+                    'hostcategory', 'cmdcategory', 'ipasudorunasusercategory',
+                    'ipasudorunasgroupcategory', 'externaluser',
+                    'ipasudorunasextuser', 'ipasudorunasextgroup',
+                    'memberdenycmd', 'memberallowcmd', 'memberuser'
+                },
+                'ipapermtarget': DN('ipauniqueid=*', 'cn=sudorules',
+                                    'cn=sudo', api.env.suffix),
+            }
+        },
+        ...
+
+If the new managed permission does not exist yet,
+''and'' an existing legacy permission exists either without an associated ACI
+or with an ACI that ''exactly'' matches the information specified
+in the <tt>replaces</tt> entry,
+a special upgrade process is followed:
+
+* The ACI for the managed permission is added (without permission entry)
+* The ACI for the existing permission is deleted
+* The existing permission entry is deleted
+* The managed permission entry is added
+
+This ensures that
+
+* the old permission is retained if the user has changed it
+* at no time are the permissions revoked
+* when restarted after failure (e.g. loss of power), the upgrade process will finish correctly
+
+To reduce clutter, the old permission info will be stored in a different file:
+
+ from ipalib.legacy import legacy_permissions
+
+    ...
+        'replaces': legacy_permissions.modify_sudo_rule,
+    ...
+
+=== Removing the global anonymous read ACI ===
+
+After the permission updater successfully runs, it will look for an ACI
+named "Enable Anonymous access" in $SUFFIX, and remove it.
+
+The <tt>update_anonymous_aci</tt> server update plugin will be removed.
+
 
 == ACI.txt ==
 
