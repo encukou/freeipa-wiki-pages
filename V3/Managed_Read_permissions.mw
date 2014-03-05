@@ -160,7 +160,7 @@ or <tt>type</tt> with a managed permission.)
 A server post-update plugin will walk through ipalib <tt>Object</tt> plugins
 and create/update managed permissions pertaining to them.
 
-Names of such default permissions are ''required'' to start with "ipa:",
+Names of such default permissions are ''required'' to start with "System: ",
 so that default permissions added in future IPA releases do not conflict
 with user-created permissions.
 The ":" character will not be usable in <tt>permission-add</tt>.
@@ -186,7 +186,7 @@ Other attributes of the Permission will be taken from the
 For example, the entry for the netgroup plugin would look like this:
 
     managed_permissions = {
-        'ipa:Read Netgroups': {
+        'System: Read Netgroups': {
             'ipapermbindruletype': 'all',
             'ipapermright': {'read', 'search', 'compare'},
             'ipapermdefaultattr': {
@@ -195,7 +195,7 @@ For example, the entry for the netgroup plugin would look like this:
             },
             'replaces_global_anonymous_aci': True,
         },
-        'ipa:Read Netgroup Membership': {
+        'System: Read Netgroup Membership': {
             'ipapermbindruletype': 'all',
             'ipapermright': {'read', 'search', 'compare'},
             'ipapermdefaultattr': {
@@ -254,7 +254,7 @@ replacing legacy permissions with new managed ones. Example:
 If the new managed permission does not exist yet,
 ''and'' an existing legacy permission exists either without an associated ACI
 or with an ACI that ''exactly'' matches the information specified
-in the <tt>replaces</tt> entry,
+in the <tt>replaces</tt> dict,
 a special upgrade process is followed:
 
 * The ACI for the managed permission is added (without permission entry)
@@ -267,6 +267,13 @@ This ensures that
 * the old permission is retained if the user has changed it
 * at no time are the permissions revoked
 * when restarted after failure (e.g. loss of power), the upgrade process will finish correctly
+
+If the new managed permission does not exist yet,
+and an existing legacy permission does matches <tt>cn</tt>
+but ''not'' some other attributes in the <tt>replaces</tt> dict,
+a warning is logged,
+the new permission is added,
+and the old one is left in place.
 
 To reduce clutter, the old permission info will be stored in a different file:
 
