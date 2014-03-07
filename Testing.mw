@@ -1,0 +1,187 @@
+= FreeIPA v3 =
+
+== In-tree testing ==
+
+'''This requires that you do a local install of IPA so you have a kerberos and LDAP infrastructure on your development machine.''' You need the python-nose package installed.
+
+You also need to configure IPA for your local installation. When running the server in-tree the server will use ~/.ipa/ instead of /etc/ipa to look for configuration files. You need to create ~/.ipa/default.conf. You can probably copy this from /etc/ipa/default.conf and tune as needed. Mine looks like:
+
+ [global]
+ domain=example.com
+ realm=EXAMPLE.COM
+ basedn=dc=example,dc=com
+ server=puma.example.com
+ enable_ra=True
+ #xmlrpc_uri=https://lion.example.com/ipa/xml
+ #in_tree=True
+
+This BASH+SED snippet should prepare the configuration file for you:
+ mkdir -p ~/.ipa
+ cat /etc/ipa/default.conf | sed 's/^xmlrpc_uri/#xmlrpc_uri/' > ~/.ipa/default.conf
+
+In order for the certificate tests to pass you'll also need to create ~/.ipa/alias. The easiest way to populate this is to grab the 3 NSS db files from /etc/httpd/alias and copy them ~/.ipa/alias. Copy /etc/httpd/alias/pwdfile.txt to  ~/.ipa/alias/.pwd. Be sure to change ownership of these files too. That should do it.
+
+ mkdir -p ~/.ipa/alias
+ cp /etc/httpd/alias/*.db ~/.ipa/alias
+ cp /etc/httpd/alias/pwdfile.txt ~/.ipa/alias/.pwd
+ chown -R $USER ~/.ipa/alias
+
+As the last step, you need to store password for Directory Managed to ~/.ipa/.dmpw file.
+
+You need to start with an admin ticket:
+
+ kinit admin
+
+In one window start the lite server. I like to start it in debug mode.
+
+ ./lite-server.py -d
+
+In another window do the tests:
+
+ make test
+
+You can run the test script directly by running:
+
+ ./make-test
+
+You can also use this to run specific tests. This can take one of two forms, both of which are equivalent. Here is how you would test the user plugin:
+
+ ./make-test tests.test_xmlrpc.test_user_plugin
+
+or
+
+ ./make-test tests/test_xmlrpc/test_user_plugin.py
+
+Note that some of the tests make certain assumptions about the data on the server. Some tests, for example, pull all entries and expect a certain number to be returned and may raise an error.
+
+This is super-useful for general development too. You can use the lite-server to quickly test plugins within the source tree. The only trick is to run the in-tree ipa command and not the system one, so:
+
+ ./ipa user-show admin
+
+It will detect that it is in the source tree and use local files and not the ones installed in /usr/lib[64].
+
+== Remote testing ==
+
+You can also test against an IPA installation on another machine, it just requires a bit more configuration.
+
+You first need to update ~/.ipa/default.conf to point to the remote machine. My test machine is lion.example.com, here is my configuration:
+
+ [global]
+ domain=example.com
+ realm=EXAMPLE.COM
+ basedn=dc=example,dc=com
+ server=lion.example.com
+ enable_ra=True
+ xmlrpc_uri=https://lion.lion.com/ipa/xml
+ in_tree=True
+ wait_for_attr=True
+
+Next, you need to configure yourself to be in the realm on your test machine. The easiest way to do this is to grab the remote krb5.conf and use that:
+
+ % scp lion.example.com:/etc/krb5.conf lion-krb5.conf
+ % export KRB5_CONFIG=`pwd`/lion-krb5.conf
+ % kinit admin
+
+Finally you need to trust the CA on the remote machine. You need to be root to do this.
+
+ # wget -O /tmp/lion.crt http://lion.example.com/ipa/config/ca.crt
+ # certutil -A -d /etc/pki/nssdb -n "lion IPA CA" -t CT,CT, -a -i /tmp/lion.crt
+
+Now you should be good-to-go to run the XML-RPC tests against a remote server.
+
+== Web UI testing ==
+
+Web UI testing is covered by [[FreeIPAv2:UI Unit Tests|unit tests]] and [[Web UI Integration Tests|integration tests]].
+
+== Integration tests ==
+
+To run the [[V3/Integration_testing|integration tests]] you need to have the freeipa-tests package installed:
+
+ # yum install freeipa-tests
+
+All the files containing actual test implementations are located in the ''$PYTHON_SITELIB/ipatests/test_integration/'' directory and start with a ''test_'' prefix. As of FreeIPA 3.3, this is the current file listing:
+
+ $ ls ipatests/test_integration/test_*.py
+ ipatests/test_integration/test_caless.py                      ipatests/test_integration/test_legacy_clients.py
+ ipatests/test_integration/test_external_ca.py                 ipatests/test_integration/test_simple_replication.py
+ ipatests/test_integration/test_forced_client_reenrollment.py  ipatests/test_integration/test_topologies.py
+ ipatests/test_integration/test_kerberos_flags.py              ipatests/test_integration/test_trust.py
+
+To run the whole integration test suite, run the following:
+
+=== Running the Tests ===
+ $ ipa-run-tests
+
+To run only tests from a specific file, run the following:
+ $ ipa-run-tests test_integration/test_simple_replication.py
+
+Please note that you need to specify a whole path '''relative''' to the python's ''site-packages/ipatests/'' directory.
+
+If you run this commands now, without any additional configuration, the tests would not work. These are integration tests, and as such, to simulate real environments, they are run using multiple hosts. This allows us to test advanced functionality such as replication or integration with other products.
+
+The tests themselves are executing by having a ''controller machine'' establish an SSH connection with each of the hosts and running commands remotely. The ''controller machine'' is the one you run the ipa-run-tests command on, and ideally should not be one of the hosts that are used for the testing.
+
+Each test machine must be configured to allow root SSH access, either via public key or a password.
+Make sure that root's profile scripts do not fail for a login session without a TTY attached. (Older RHEL/Fedora machines invoke <tt>clear</tt> from <tt>/root/.bash_logout</tt>, this will fail without a TTY. Remove the <tt>clear</tt> command before running the tests.)
+
+=== Configuring the Test Environment ===
+The configuration of your environment used for the testing is passed via environment variables. Let's dive into simplest possible self-explanatory example:
+
+<tt>~/.bashrc</tt>:
+ export MASTER_env1=vm-203.dom203.ipa.tests.org
+
+This environment variable defines a IPA master. The first part of the variable defines the '''role''', and the second part defines the '''domain suffix'''.
+Please note that ''vm-203.dom203.ipa.tests.org'' should be different from the machine that we're running the tests on (as mentioned previously).
+
+Each test requires a minimal number of available resources (we think of a host with a defined role as of resource - e.g., from previous example, vm-203.dom203.ipa.tests.org is master resource) that it needs for its run. If the resource demand is not met, this particular test is skipped.
+
+Other hosts for pre-defined roles (such as REPLICA, AD or CLIENT) can be defined in a similar way, in ''~/.bashrc'':
+ export MASTER_env1=vm-203.dom203.ipa.tests.org
+ export REPLICA_env1=vm-204.dom203.ipa.tests.org vm-205.dom203.ipa.tests.org
+
+This defines a testing environment with one IPA master and two replicas, suitable for running e.g. an replication test.
+
+For tests that need to operate with Active Directory, you need to define an host of AD role. This works as expected and described above. However, there is one catch, since IPA and AD do not share the same domain, please make sure to use '''different''' domain suffixes for IPA master and AD:
+
+ export MASTER_env1=vm-203.dom203.ipa.tests.org
+ export REPLICA_env1=vm-204.dom203.ipa.tests.org vm-205.dom203.ipa.tests.org
+ export AD_env2=ad.addomain.ipa.tests.org
+
+Note the usage of '''_env1''' and '''_env2''' in the example above.
+
+Also, you can use the ADADMINPW environment variable to define the password of the AD's Administrator's account. (by default, this is set to Secret123)
+
+ export MASTER_env1=vm-203.dom203.ipa.tests.org
+ export REPLICA_env1=vm-204.dom203.ipa.tests.org vm-205.dom203.ipa.tests.org
+ export AD_env2=ad.addomain.ipa.tests.org
+ export ADADMINPW=Secret123456
+
+Some tests need to operate with machines that have custom configuration and cannot be referred to as a general client or replica. A particular example of such a test are legacy client tests, when we need to make sure, that the client we're using for the testing is indeed a legacy one (and not an up-to-date Fedora).
+
+To support this use case, such tests require custom roles. To define a custom role host, you need to define an environment variable that starts with '''TESTHOST_''' prefix (this prefix is what the framework uses to make a difference between a normal environment variable and a one that defines a custom role). The rest of the environment variable is consistent with the examples above, so e.g.:
+
+ export MASTER_env1=vm-203.dom203.ipa.tests.org
+ export TESTHOST_LEGACY_CLIENT_SSSD_REDHAT_env1=vm-214.dom203.ipa.tests.org
+
+will create a custom role under the name of "legacy_client_sssd_redhat".
+
+To see what resources a test requires, you can have a peek into its implementation:
+
+ $ vim test_legacy_clients.py
+ class TestLegacySSSDBefore19RedHat(BaseTestLegacyClient):
+    advice_id = 'config-redhat-sssd-before-1-9'
+    required_extra_roles = ['legacy_client_sssd_redhat']
+
+ $ vim test_simple_replication.py
+ class TestSimpleReplication(IntegrationTest):
+     """Simple replication test
+     Install a server and a replica, then add an user on one host and ensure
+     it is also present on the other one.
+     """
+     num_replicas = 1
+
+Additionally, if a test is skipped due to the insufficient resources available, the exception contains information about what resources were not available.
+
+For more information about the configuration options, see the manual pages for the ipa-test-config.
+
+ $ man ipa-test-config
