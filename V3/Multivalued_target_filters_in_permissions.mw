@@ -16,6 +16,10 @@ will use objectclass target filters instead of wildcard targets.
 This is a change to [[V3/Permissions_V2|Permissions_V2]]
 that will be implemented in the same release.
 
+An additional virtual attribute, <tt>extratargetfilter</tt>
+(<tt>--filter</tt> in the CLI), will show/update filters that are not
+implied by <tt>--user</tt> or </tt>--memberof</tt>.
+
 = Use Cases =
 
 TODO
@@ -25,7 +29,7 @@ TODO
 == Multi-valued ipapermtargetfilter ==
 
 The <tt>ipapermtargetfilter</tt> attribute,
-and the corresponding <tt>filter</tt> option,
+and its corresponding <tt>rawfilter</tt> option,
 will become multi-valued.
 When more than one value is present, they all need to apply --
 they will be joined by <tt>(& )</tt> to create the ACI.
@@ -40,7 +44,8 @@ with the <tt>--filter</tt> option.
 
 When <tt>--memberof</tt> is specified,
 the <tt>permission-mod</tt> command will remove any
-existing <tt>(memberof=...)</tt> filter(s), but leave any other filters;
+existing <tt>(memberof=...)</tt> filter(s) that correspond co concrete groups,
+but leave any other filters;
 then add any additional filter(s) specified
 by the <tt>--memberof</tt>, <tt>--type</tt>, <tt>--filter</tt> options.
 
@@ -62,7 +67,8 @@ the option will now set the target filter to <tt>(objectclass=...)</tt>
 (or possibly, multiple such filters).
 
 Similarly to <tt>--memberof</tt>, <tt>permission-mod</tt>'s <tt>--type</tt>
-will remove any existing <tt>(objectclass=...)</tt> filter(s).
+will any existing <tt>(objectclass=...)</tt> filter(s) corresponding
+to a pre-existing type.
 
 On output, if the ACI location matches an eligible object type,
 and proper objectclass filters are present,
@@ -94,9 +100,23 @@ The existence of this declaration will make the type usable
 in a permission (in contrast with the current situation,
 where a list of types is hardcoded in the permission & ACI plugins).
 
+== Raw targetfilter vs. extratargetfilter ==
+
+In CLI, <tt>ipapermtargetfilter</tt> will be accessible as <tt>--rawfilter</tt>.
+Setting the option affects the type & memberof virtual attributes.
+On output, the value will only be present if <tt>--all</tt> or <tt>--raw</tt>
+is specified.
+
+Another multivaluesd option, <tt>extratargetfilter</tt>
+(CLI name: <tt>filter</tt>)
+will only list the target filters that are not implied by the <tt>memberof</tt>
+and <tt>type</tt> virtual attributes.
+When setting this option, these implied filters will be preserved.
+
 = Implementation =
 
-No additional requirements or changes discovered during the implementation phase.
+Additional requirements or changes discovered during the implementation phase
+were merged into this document.
 
 = Feature Management =
 

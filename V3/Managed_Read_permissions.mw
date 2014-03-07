@@ -152,7 +152,7 @@ It is an error to set the <tt>ipapermlocation</tt>,
 <tt>ipapermtargetfilter</tt>, or <tt>ipapermtarget</tt>
 of a managed permission.
 (This means that it's an error to ise the API options <tt>subtree</tt>,
-<tt>filter</tt>, <tt>target</tt>, <tt>memberof</tt>, <tt>targetgroup</tt>,
+<tt>extratargetfilter</tt>, <tt>target</tt>, <tt>memberof</tt>, <tt>targetgroup</tt>,
 or <tt>type</tt> with a managed permission.)
 
 == Default Permission Updater ==
