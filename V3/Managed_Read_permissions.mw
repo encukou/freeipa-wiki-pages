@@ -175,49 +175,9 @@ This will allow plugins to be more self-contained; it will no longer be
 necessary to modify IPA's update files to add the common cases
 of plugin-specific permissions.
 
-The <tt>objectclass</tt>, <tt>ipapermlocation</tt> and an objectclass filter
-will be added to the default permission as if
-<tt>permission-add</tt> was used with the corresponding <tt>--type</tt>.
-
-The flags (<tt>ipapermissiontype</tt>) will be set to <tt>SYSTEM, V2, MANAGED</tt>.
-
-Other attributes of the Permission will be taken from the
-<tt>managed_permissions</tt> template.
-For example, the entry for the netgroup plugin would look like this:
-
-    managed_permissions = {
-        'System: Read Netgroups': {
-            'ipapermbindruletype': 'all',
-            'ipapermright': {'read', 'search', 'compare'},
-            'ipapermdefaultattr': {
-                'cn', 'description', 'hostcategory', 'ipaenabledflag',
-                'ipauniqueid', 'nisdomainname', 'usercategory'
-            },
-            'replaces_global_anonymous_aci': True,
-        },
-        'System: Read Netgroup Membership': {
-            'ipapermbindruletype': 'all',
-            'ipapermright': {'read', 'search', 'compare'},
-            'ipapermdefaultattr': {
-                'externalhost', 'member', 'memberof', 'memberuser'
-            },
-            'replaces_global_anonymous_aci': True,
-        },
-    }
-
-; ipapermbindruletype, ipapermright
-: Directly used as attributes on the permission.
-; ipapermdefaultattr
-: Used as attribute of the permission.
-: When upgrading, only new values are added, all old values are kept.
-: (This means installing/updating to a low-version replica will not remove permissions.)
-; replaces_global_anonymous_aci
-: If true, any attributes specified (denied) in the legacy global anonymous read ACI will be added to excluded_attributes of the new permission.
-: Has no effect when existing permissions are updated.
-
-TODO: There will also be a list of default permissions not bound to an Object.
-It will be processed in the same way, but the template will have explicit
-<tt>ipapermlocation</tt> and <tt>ipapermfilter</tt>.
+The format of the managed_permissions templates will be documented in the
+<tt>update_managed_permissions</tt> server plugin
+([https://git.fedorahosted.org/cgit/freeipa.git/tree/ipaserver/install/plugins/update_managed_permissions.py link]).
 
 === Replacing legacy default permissions ===
 
@@ -236,52 +196,26 @@ replacing legacy permissions with new managed ones. Example:
                 'ipasudorunasextuser', 'ipasudorunasextgroup', 'memberdenycmd',
                 'memberallowcmd', 'memberuser'
             },
-            'replaces': {
-                'cn': 'Modify Sudo rule',
-                'ipapermincludedattr': {
-                    'description', 'ipaenabledflag', 'usercategory',
-                    'hostcategory', 'cmdcategory', 'ipasudorunasusercategory',
-                    'ipasudorunasgroupcategory', 'externaluser',
-                    'ipasudorunasextuser', 'ipasudorunasextgroup',
-                    'memberdenycmd', 'memberallowcmd', 'memberuser'
-                },
-                'ipapermtarget': DN('ipauniqueid=*', 'cn=sudorules',
-                                    'cn=sudo', api.env.suffix),
+            'replaces': [
+                '(targetattr = "description || ipaenabledflag || usercategory || hostcategory || cmdcategory || ipasudorunasusercategory || ipasudorunasgroupcategory || externaluser || ipasudorunasextuser || ipasudorunasextgroup || memberdenycmd || memberallowcmd || memberuser")(target = "ldap:///ipauniqueid=*,cn=sudorules,cn=sudo,$SUFFIX")(version 3.0;acl "permission:Modify Sudo rule";allow (write) groupdn = "ldap:///cn=Modify Sudo rule,cn=permissions,cn=pbac,$SUFFIX";)',
             }
         },
         ...
 
-If the new managed permission does not exist yet,
-''and'' an existing legacy permission exists either without an associated ACI
-or with an ACI that ''exactly'' matches the information specified
-in the <tt>replaces</tt> dict,
-a special upgrade process is followed:
-
-* The ACI for the managed permission is added (without permission entry)
-* The ACI for the existing permission is deleted
-* The existing permission entry is deleted
-* The managed permission entry is added
+If the an existing ''legacy'' (i.e. non-v2) permission exists either without
+an associated ACI or with an ACI that ''exactly'' matches the information
+specified in the <tt>replaces</tt> list, the old permission is removed
+after the new one is added.
 
 This ensures that
 
 * the old permission is retained if the user has changed it
-* at no time are the permissions revoked
-* when restarted after failure (e.g. loss of power), the upgrade process will finish correctly
+* at no time are the ACIs revoked (briefly, there are two ACIs granting the same access).
 
-If the new managed permission does not exist yet,
-and an existing legacy permission does matches <tt>cn</tt>
+If an existing legacy permission does match <tt>cn</tt>
 but ''not'' some other attributes in the <tt>replaces</tt> dict,
-a warning is logged,
-the new permission is added,
+a warning is logged, the new permission is added,
 and the old one is left in place.
-
-To reduce clutter, the old permission info will be stored in a different file:
-
- from ipalib.legacy import legacy_permissions
-
-    ...
-        'replaces': legacy_permissions.modify_sudo_rule,
-    ...
 
 === Removing the global anonymous read ACI ===
 
